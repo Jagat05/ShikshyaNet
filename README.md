@@ -1,0 +1,2 @@
+# ShikshyaNet
+Institute Management System
