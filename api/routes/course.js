@@ -4,6 +4,7 @@ const checkAuth = require("../middleware/checkAuth");
 const mongoose = require("mongoose");
 const Course = require("../model/Course");
 const jwt = require("jsonwebtoken");
+const Student = require("../model/Student");
 const cloudinary = require("cloudinary").v2;
 
 cloudinary.config({
@@ -50,7 +51,7 @@ router.post("/add-course", checkAuth, (req, res) => {
   });
 });
 
-// Get All Courses
+// Get All Courses for any user
 router.get("/all-courses", checkAuth, (req, res) => {
   const token = req.headers.authorization.split(" ")[1];
   const verify = jwt.verify(token, "SikshyanNet98765");
@@ -68,21 +69,33 @@ router.get("/all-courses", checkAuth, (req, res) => {
     });
 });
 
-// Get one Course
+// Get one Course for any user
+// Get one Course for any user
 router.get("/course-detail/:id", checkAuth, (req, res) => {
   Course.findById(req.params.id)
     .select(
       "_id uid courseName price description startingDate endDate imageUrl imageId"
     )
-    .then((result) => {
-      if (!result) {
-        return res.status(404).json({ message: "Course not found." });
+    .then((course) => {
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
       }
-      return res.status(200).json({ courses: result });
+
+      Student.find({ courseId: req.params.id })
+        .then((students) => {
+          return res.status(200).json({
+            course: course,
+            studentList: students,
+          });
+        })
+        .catch((err) => {
+          console.error("Error fetching students:", err);
+          return res.status(500).json({ error: "Error fetching students" });
+        });
     })
     .catch((err) => {
       console.error("Error fetching course:", err);
-      return res.status(500).json({ error: err });
+      return res.status(500).json({ error: "Error fetching course" });
     });
 });
 
@@ -202,6 +215,22 @@ router.put("/:id", checkAuth, (req, res) => {
     .catch((err) => {
       console.error("Error finding course:", err);
       return res.status(500).json({ error: "Error finding course." });
+    });
+});
+// get latest 5 courses
+router.get("/latest-courses", checkAuth, (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const verify = jwt.verify(token, "SikshyanNet98765");
+
+  Course.find({ uid: verify.uid })
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .then((result) => {
+      return res.status(200).json({ courses: result });
+    })
+    .catch((err) => {
+      console.error("Error fetching latest courses:", err);
+      return res.status(500).json({ error: err });
     });
 });
 

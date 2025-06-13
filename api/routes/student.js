@@ -88,6 +88,32 @@ router.get("/student/:id", checkAuth, (req, res) => {
       return res.status(500).json({ error: err });
     });
 });
+//Get All Students for any course
+router.get("/course-students/:courseId", checkAuth, (req, res) => {
+  const token = req.headers.authorization.split(" ")[1];
+  const verify = jwt.verify(token, "SikshyanNet98765");
+  const courseId = req.params.courseId;
+  if (!mongoose.Types.ObjectId.isValid(courseId)) {
+    return res.status(400).json({ error: "Invalid course ID." });
+  }
+  Student.find({ courseId: courseId, uid: verify.uid })
+    .select(
+      "_id fullname phone email address courseId imageUrl imageId createdAt updatedAt"
+    )
+    .then((students) => {
+      if (students.length === 0) {
+        return res
+          .status(404)
+          .json({ error: "No students found for this course." });
+      }
+      return res.status(200).json({ students });
+    })
+    .catch((err) => {
+      console.error("Database query error:", err);
+      return res.status(500).json({ error: err });
+    });
+});
+
 // Update Student with Image
 router.put("/update-student/:id", checkAuth, (req, res) => {
   const token = req.headers.authorization.split(" ")[1];
@@ -147,22 +173,6 @@ router.delete("/delete-student/:id", checkAuth, (req, res) => {
 });
 //get latest 5 Stuents
 router.get("/latest-students", checkAuth, (req, res) => {
-  const token = req.headers.authorization.split(" ")[1];
-  const verify = jwt.verify(token, "SikshyanNet98765");
-
-  Student.find({ uid: verify.uid })
-    .sort({ createdAt: -1 })
-    .limit(5)
-    .then((students) => {
-      return res.status(200).json({ students });
-    })
-    .catch((err) => {
-      console.error("Database query error:", err);
-      return res.status(500).json({ error: err });
-    });
-});
-// get latest courses
-router.get("/latest-courses", checkAuth, (req, res) => {
   const token = req.headers.authorization.split(" ")[1];
   const verify = jwt.verify(token, "SikshyanNet98765");
 
