@@ -3,12 +3,7 @@ const app = express();
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
 const fileUpload = require("express-fileupload");
-
-// Importing Routes
-const userRoute = require("./routes/user");
-const studentRoute = require("./routes/student");
-const feeRoute = require("./routes/fee");
-const courseRoute = require("./routes/course");
+const cors = require("cors");
 
 // Connect to MongoDB
 mongoose
@@ -22,9 +17,17 @@ mongoose
     console.log("Database Connection Error:", err.message);
   });
 
+// Enable CORS for your frontend origin
+app.use(
+  cors({
+    origin: "http://localhost:8080", // <-- change this if your frontend runs on a different port or domain
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 app.use(bodyParser.json());
-// Middleware to parse JSON
-// app.use(express.json());
+
 app.use(
   fileUpload({
     useTempFiles: true,
@@ -32,10 +35,16 @@ app.use(
   })
 );
 
+// Importing Routes
+const userRoute = require("./routes/user");
+const studentRoute = require("./routes/student");
+const feeRoute = require("./routes/fee");
+const courseRoute = require("./routes/course");
+
 // Route Definitions
 app.use("/user", userRoute); // → /user/signup
 app.use("/student", studentRoute); // → /student/add-student
-app.use("/course", courseRoute); // → /batch/add-batch
+app.use("/course", courseRoute); // → /course/add-course
 app.use("/fee", feeRoute); // → /fee/add-fee
 
 // Handle 404 Errors
