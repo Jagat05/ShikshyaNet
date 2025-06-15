@@ -1,3 +1,4 @@
+// routes/student.js
 const express = require("express");
 const router = express.Router();
 const checkAuth = require("../middleware/checkAuth");
@@ -6,26 +7,25 @@ const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const cloudinary = require("cloudinary").v2;
 
+// Cloudinary config - make sure env variables are set properly
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
   api_key: process.env.API_KEY,
   api_secret: process.env.API_SECRET,
 });
 
-// Add New Student
-router.post("/add-student", checkAuth, (req, res) => {
-  const token = req.headers.authorization.split(" ")[1];
-  const verify = jwt.verify(token, "SikshyanNet98765");
+// Decode JWT and get uid
+const getUID = (token) => jwt.verify(token, "SikshyanNet98765").uid;
 
-  if (!req.files || !req.files.image) {
-    return res.status(400).json({ error: "Image file is required." });
-  }
+// --- Add new student ---
+router.post("/students", checkAuth, async (req, res) => {
+  try {
+    const uid = getUID(req.headers.authorization.split(" ")[1]);
+    const image = req.files?.image;
+    if (!image)
+      return res.status(400).json({ error: "Image file is required." });
 
-  cloudinary.uploader.upload(req.files.image.tempFilePath, (err, result) => {
-    if (err) {
-      console.error("Cloudinary upload error:", err);
-      return res.status(500).json({ error: "Image upload failed." });
-    }
+    const result = await cloudinary.uploader.upload(image.tempFilePath);
 
     const newStudent = new Student({
       fullname: req.body.fullname,
@@ -33,159 +33,144 @@ router.post("/add-student", checkAuth, (req, res) => {
       email: req.body.email,
       address: req.body.address,
       courseId: req.body.courseId,
-      uid: verify.uid, // FIXED: use decoded token uid
+      uid,
       imageUrl: result.secure_url,
       imageId: result.public_id,
     });
 
-    newStudent
-      .save()
-      .then((savedStudent) => {
-        return res.status(200).json({ newStudent: savedStudent });
-      })
-      .catch((saveErr) => {
-        console.error("Database save error:", saveErr);
-        return res.status(500).json({ error: saveErr });
-      });
-  });
-});
-router.post("/add-student", (req, res) => {
-  res.status(200).json({
-    msg: "Add New Student Request !",
-  });
-});
-//get all students
-router.get("/all-students", checkAuth, (req, res) => {
-  const token = req.headers.authorization.split(" ")[1];
-  const verify = jwt.verify(token, "SikshyanNet98765");
-
-  Student.find({ uid: verify.uid })
-    .select(
-      "_id fullname phone email address courseId imageUrl imageId createdAt updatedAt"
-    )
-    .then((students) => {
-      return res.status(200).json({ students });
-    })
-    .catch((err) => {
-      console.error("Database query error:", err);
-      return res.status(500).json({ error: err });
-    });
-});
-// Get one Student
-router.get("/student/:id", checkAuth, (req, res) => {
-  const token = req.headers.authorization.split(" ")[1];
-  const verify = jwt.verify(token, "SikshyanNet98765");
-
-  Student.findOne({ _id: req.params.id, uid: verify.uid })
-    .then((student) => {
-      if (!student) {
-        return res.status(404).json({ error: "Student not found." });
-      }
-      return res.status(200).json({ student });
-    })
-    .catch((err) => {
-      console.error("Database query error:", err);
-      return res.status(500).json({ error: err });
-    });
-});
-//Get All Students for any course
-router.get("/course-students/:courseId", checkAuth, (req, res) => {
-  const token = req.headers.authorization.split(" ")[1];
-  const verify = jwt.verify(token, "SikshyanNet98765");
-  const courseId = req.params.courseId;
-  if (!mongoose.Types.ObjectId.isValid(courseId)) {
-    return res.status(400).json({ error: "Invalid course ID." });
+    const saved = await newStudent.save();
+    res.status(201).json({ student: saved });
+  } catch (err) {
+    console.error("Add Student Error:", err);
+    res.status(500).json({ error: "Failed to add student." });
   }
-  Student.find({ courseId: courseId, uid: verify.uid })
-    .select(
-      "_id fullname phone email address courseId imageUrl imageId createdAt updatedAt"
-    )
-    .then((students) => {
-      if (students.length === 0) {
-        return res
-          .status(404)
-          .json({ error: "No students found for this course." });
-      }
-      return res.status(200).json({ students });
-    })
-    .catch((err) => {
-      console.error("Database query error:", err);
-      return res.status(500).json({ error: err });
-    });
 });
 
-// Update Student with Image
-router.put("/update-student/:id", checkAuth, (req, res) => {
-  const token = req.headers.authorization.split(" ")[1];
-  const verify = jwt.verify(token, "SikshyanNet98765");
-
-  if (!req.files || !req.files.image) {
-    return res.status(400).json({ error: "Image file is required." });
+// --- Get all students ---
+router.get("/students", checkAuth, async (req, res) => {
+  try {
+    const uid = getUID(req.headers.authorization.split(" ")[1]);
+    const students = await Student.find({ uid }).select(
+      "_id fullname phone email address courseId imageUrl createdAt updatedAt"
+    );
+    res.status(200).json({ students }); // returns { students: [ ... ] }
+  } catch (err) {
+    console.error("Fetch All Students Error:", err);
+    res.status(500).json({ error: "Failed to fetch students." });
   }
+});
 
-  cloudinary.uploader.upload(req.files.image.tempFilePath, (err, result) => {
-    if (err) {
-      console.error("Cloudinary upload error:", err);
-      return res.status(500).json({ error: "Image upload failed." });
+// --- Get single student ---
+router.get("/students/:id", checkAuth, async (req, res) => {
+  try {
+    const uid = getUID(req.headers.authorization.split(" ")[1]);
+    if (!mongoose.Types.ObjectId.isValid(req.params.id))
+      return res.status(400).json({ error: "Invalid student ID." });
+
+    const student = await Student.findOne({ _id: req.params.id, uid });
+    if (!student) return res.status(404).json({ error: "Student not found." });
+    res.status(200).json({ student });
+  } catch (err) {
+    console.error("Fetch Student Error:", err);
+    res.status(500).json({ error: "Failed to fetch student." });
+  }
+});
+
+// --- Update student ---
+router.put("/students/:id", checkAuth, async (req, res) => {
+  try {
+    const uid = getUID(req.headers.authorization.split(" ")[1]);
+    if (!mongoose.Types.ObjectId.isValid(req.params.id))
+      return res.status(400).json({ error: "Invalid student ID." });
+
+    let updateData = {
+      fullname: req.body.fullname,
+      phone: req.body.phone,
+      email: req.body.email,
+      address: req.body.address,
+      courseId: req.body.courseId,
+    };
+
+    if (req.files?.image) {
+      const result = await cloudinary.uploader.upload(
+        req.files.image.tempFilePath
+      );
+      updateData.imageUrl = result.secure_url;
+      updateData.imageId = result.public_id;
     }
 
-    Student.findOneAndUpdate(
-      { _id: req.params.id, uid: verify.uid },
-      {
-        fullname: req.body.fullname,
-        phone: req.body.phone,
-        email: req.body.email,
-        address: req.body.address,
-        courseId: req.body.courseId,
-        imageUrl: result.secure_url,
-        imageId: result.public_id,
-      },
+    const updated = await Student.findOneAndUpdate(
+      { _id: req.params.id, uid },
+      updateData,
       { new: true }
-    )
-      .then((updatedStudent) => {
-        if (!updatedStudent) {
-          return res.status(404).json({ error: "Student not found." });
-        }
-        return res.status(200).json({ updatedStudent });
-      })
-      .catch((updateErr) => {
-        console.error("Database update error:", updateErr);
-        return res.status(500).json({ error: updateErr });
-      });
-  });
-});
-//delete student
-router.delete("/delete-student/:id", checkAuth, (req, res) => {
-  const token = req.headers.authorization.split(" ")[1];
-  const verify = jwt.verify(token, "SikshyanNet98765");
+    );
 
-  Student.findOneAndDelete({ _id: req.params.id, uid: verify.uid })
-    .then((deletedStudent) => {
-      if (!deletedStudent) {
-        return res.status(404).json({ error: "Student not found." });
-      }
-      return res.status(200).json({ message: "Student deleted successfully." });
-    })
-    .catch((err) => {
-      console.error("Database delete error:", err);
-      return res.status(500).json({ error: err });
-    });
-});
-//get latest 5 Stuents
-router.get("/latest-students", checkAuth, (req, res) => {
-  const token = req.headers.authorization.split(" ")[1];
-  const verify = jwt.verify(token, "SikshyanNet98765");
+    if (!updated) return res.status(404).json({ error: "Student not found." });
 
-  Student.find({ uid: verify.uid })
-    .sort({ createdAt: -1 })
-    .limit(5)
-    .then((students) => {
-      return res.status(200).json({ students });
-    })
-    .catch((err) => {
-      console.error("Database query error:", err);
-      return res.status(500).json({ error: err });
-    });
+    res.status(200).json({ student: updated });
+  } catch (err) {
+    console.error("Update Student Error:", err);
+    res.status(500).json({ error: "Failed to update student." });
+  }
+});
+
+// --- Delete student ---
+router.delete("/students/:id", checkAuth, async (req, res) => {
+  try {
+    const uid = getUID(req.headers.authorization.split(" ")[1]);
+    if (!mongoose.Types.ObjectId.isValid(req.params.id))
+      return res.status(400).json({ error: "Invalid student ID." });
+
+    const deleted = await Student.findOneAndDelete({ _id: req.params.id, uid });
+
+    if (!deleted) return res.status(404).json({ error: "Student not found." });
+
+    res.status(200).json({ message: "Student deleted successfully." });
+  } catch (err) {
+    console.error("Delete Student Error:", err);
+    res.status(500).json({ error: "Failed to delete student." });
+  }
+});
+
+// --- Get students by course ---
+router.get("/students/course/:courseId", checkAuth, async (req, res) => {
+  try {
+    const uid = getUID(req.headers.authorization.split(" ")[1]);
+    const { courseId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(courseId)) {
+      return res.status(400).json({ error: "Invalid course ID." });
+    }
+
+    const students = await Student.find({ courseId, uid }).select(
+      "_id fullname phone email address courseId imageUrl createdAt updatedAt"
+    );
+
+    if (!students.length) {
+      return res
+        .status(404)
+        .json({ error: "No students found for this course." });
+    }
+
+    res.status(200).json({ students });
+  } catch (err) {
+    console.error("Fetch Students by Course Error:", err);
+    res.status(500).json({ error: "Failed to fetch students." });
+  }
+});
+
+// --- Get latest 5 students ---
+router.get("/students/latest", checkAuth, async (req, res) => {
+  try {
+    const uid = getUID(req.headers.authorization.split(" ")[1]);
+    const students = await Student.find({ uid })
+      .sort({ createdAt: -1 })
+      .limit(5);
+    res.status(200).json({ students });
+  } catch (err) {
+    console.error("Latest Students Error:", err);
+    res.status(500).json({ error: "Failed to fetch latest students." });
+  }
 });
 
 module.exports = router;
